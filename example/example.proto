@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package staff;
+
+message Staff {
+    string ID = 1;    //`json:"id,omitempty"   xml:"id,omitempty"`
+    string Name = 2;  //`json:"name,omitempty" xml:"name,omitempty"`
+    int64 Age = 3;    //`json:"age,omitempty"  xml:"age,omitempty"`
+    message Class {
+        string ID = 1;      //`json:"id,omitempty"    xml:"id,omitempty"`
+        string Type = 2;    //`json:"type,omitempty"  xml:"type,omitempty"`
+    };
+
+    Class MyClass = 4;    //`json:"class,omitempty"     xml:"class,omitempty"`
+}
