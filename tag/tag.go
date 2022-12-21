@@ -1,4 +1,4 @@
-package proto_tag
+package tag
 
 import (
 	"bufio"
