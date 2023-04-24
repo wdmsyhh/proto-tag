@@ -14,7 +14,7 @@ It has these top-level messages:
 	StringMessage
 	User
 */
-package staff
+package tagReset
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
