@@ -1,22 +1,22 @@
-package proto_tag
+package tag
 
 import (
 	"bufio"
 	"bytes"
 	"container/list"
-	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/golang/protobuf/protoc-gen-go/generator"
 )
 
 func init() {
-	generator.RegisterPlugin(new(tag))
+	generator.RegisterPlugin(new(Tag))
 }
 
-type tag struct {
+type Tag struct {
 	gen         *generator.Generator
 	tags        map[string]string
 	fieldMaxLen int
@@ -24,36 +24,36 @@ type tag struct {
 }
 
 // Name returns the name of this plugin, "settag"
-func (r *tag) Name() string {
+func (r *Tag) Name() string {
 	return "tag"
 }
 
 // Init initializes the plugin.
-func (r *tag) Init(gen *generator.Generator) {
+func (r *Tag) Init(gen *generator.Generator) {
 	r.gen = gen
 }
 
-func (r *tag) P(args ...interface{}) { r.gen.P(args...) }
+func (r *Tag) P(args ...interface{}) { r.gen.P(args...) }
 
 // Generate generates code for the services in the given file.
-func (r *tag) Generate(file *generator.FileDescriptor) {
-	r.getStructTags(*file.Name)
-	r.tag()
+func (r *Tag) Generate(file *generator.FileDescriptor) {
+	r.GetStructTags(*file.Name)
+	r.Tag("")
 }
 
 // GenerateImports generates the import declaration for this file.
-func (r *tag) GenerateImports(file *generator.FileDescriptor) {}
+func (r *Tag) GenerateImports(file *generator.FileDescriptor) {}
 
-func (r *tag) getStructTags(filename string) {
+func (r *Tag) GetStructTags(filename string) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return
 	}
 	defer file.Close()
+	reader := bufio.NewReader(file)
 
 	r.tags = make(map[string]string)
 	var comment bool
-	reader := bufio.NewReader(file)
 	msgNameStack := NewStack()
 	for {
 		line, _, err := reader.ReadLine()
@@ -66,11 +66,13 @@ func (r *tag) getStructTags(filename string) {
 			continue
 		}
 
-		if strings.HasPrefix(strings.TrimSpace(string(line)), "/*") {
+		strLine := string(line)
+
+		if strings.HasPrefix(strings.TrimSpace(strLine), "/*") {
 			comment = true
 		}
 
-		if comment && strings.Contains(string(line), "*/") {
+		if comment && strings.Contains(strLine, "*/") {
 			comment = false
 			continue
 		}
@@ -79,29 +81,35 @@ func (r *tag) getStructTags(filename string) {
 			continue
 		}
 
-		//fmt.Println("------", string(line))
-		if strings.HasPrefix(strings.TrimSpace(string(line)), "message") {
-			if msgNameStack.GetPOP() != "" {
-				msgNameStack.PUSH(msgNameStack.GetPOP() + "_" + strings.Fields(string(line))[1])
+		if strings.HasPrefix(strings.TrimSpace(strLine), "message") {
+			pop := msgNameStack.GetPOP()
+			if pop != "" {
+				msgNameStack.PUSH(pop + "_" + strings.Fields(string(line))[1])
 			} else {
-				msgNameStack.PUSH(strings.Fields(string(line))[1])
+				msgNameStack.PUSH(strings.Fields(strLine)[1])
 			}
 			continue
 		}
 
-		if msgNameStack.GetPOP() != "" && strings.TrimSpace(string(line))[0] == '}' {
+		pop := msgNameStack.GetPOP()
+		if pop != "" && strings.TrimSpace(strLine)[0] == '}' {
 			msgNameStack.POP()
 			continue
 		}
 
-		if msgNameStack.GetPOP() != "" {
-			if strings.HasPrefix(strings.TrimSpace(string(line)), "//") {
+		pop = msgNameStack.GetPOP()
+		if pop != "" {
+			if strings.HasPrefix(strings.TrimSpace(strLine), "//") {
 				continue
 			}
 
-			k, v := getFieldTag(string(line), msgNameStack.GetPOP())
+			k, v := getFieldTag(strLine, msgNameStack.GetPOP())
 
-			r.tags[k] = v
+			if k == "" && v == "" {
+				continue
+			}
+
+			r.tags[strings.ToLower(k)] = v
 
 			if len(strings.Split(k, ".")[1]) > r.fieldMaxLen {
 				r.fieldMaxLen = len(strings.Split(k, ".")[1])
@@ -158,16 +166,30 @@ func trimInside(s string) string {
 	return s
 }
 
-func (r *tag) tag() {
+func (r *Tag) Tag(pbgoFileName string) {
 	if len(r.tags) <= 0 {
 		return
 	}
 
-	readbuf := bytes.NewBuffer([]byte{})
-	readbuf.Write(r.gen.Buffer.Bytes())
-	buf := bytes.NewBuffer([]byte{})
+	reader := &bufio.Reader{}
+	// 仅在测试的时候传
+	if pbgoFileName != "" {
+		file, err := os.Open(pbgoFileName)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+		reader = bufio.NewReader(file)
+		r.gen = &generator.Generator{
+			Buffer: &bytes.Buffer{},
+		}
+	} else {
+		readbuf := bytes.NewBuffer([]byte{})
+		readbuf.Write(r.gen.Buffer.Bytes())
+		reader = bufio.NewReader(readbuf)
+	}
 
-	reader := bufio.NewReader(readbuf)
+	buf := bytes.NewBuffer([]byte{})
 	var comment bool
 	msgNameStack := NewStack()
 	for {
@@ -177,11 +199,13 @@ func (r *tag) tag() {
 			break
 		}
 
-		if strings.HasPrefix(strings.TrimSpace(string(line)), "/*") {
+		strLine := string(line)
+
+		if strings.HasPrefix(strings.TrimSpace(strLine), "/*") {
 			comment = true
 		}
 
-		if comment && strings.Contains(string(line), "*/") {
+		if comment && strings.Contains(strLine, "*/") {
 			comment = false
 			buf.Write(line)
 			buf.WriteString("\n")
@@ -194,11 +218,11 @@ func (r *tag) tag() {
 			continue
 		}
 
-		if r.needtag(strings.TrimSpace(string(line))) {
+		if r.needtag(strings.TrimSpace(strLine)) {
 			if msgNameStack.GetPOP() != "" {
-				msgNameStack.PUSH(msgNameStack.GetPOP() + "_" + strings.Fields(string(line))[1])
+				msgNameStack.PUSH(msgNameStack.GetPOP() + "_" + strings.Fields(strLine)[1])
 			} else {
-				msgNameStack.PUSH(strings.Fields(string(line))[1])
+				msgNameStack.PUSH(strings.Fields(strLine)[1])
 			}
 
 			buf.Write(line)
@@ -206,7 +230,7 @@ func (r *tag) tag() {
 			continue
 		}
 
-		if msgNameStack.GetPOP() != "" && strings.TrimSpace(string(line))[0] == '}' {
+		if msgNameStack.GetPOP() != "" && strings.TrimSpace(strLine)[0] == '}' {
 			msgNameStack.POP()
 			buf.Write(line)
 			buf.WriteString("\n")
@@ -214,16 +238,16 @@ func (r *tag) tag() {
 		}
 
 		if msgNameStack.GetPOP() != "" {
-			if strings.HasPrefix(strings.TrimSpace(string(line)), "//") {
+			if strings.HasPrefix(strings.TrimSpace(strLine), "//") {
 				buf.Write(line)
 				buf.WriteString("\n")
 				continue
 			}
 
-			fields := strings.Fields(strings.TrimSpace(string(line)))
+			fields := strings.Fields(strings.TrimSpace(strLine))
 			key := msgNameStack.GetPOP() + "." + fields[0]
-			tag := r.tags[key]
-			newline := resetTag(string(line), fields[0], tag, r.fieldMaxLen, r.tagMaxLen)
+			tag := r.tags[strings.ToLower(key)]
+			newline := resetTag(strLine, fields[0], tag, r.fieldMaxLen, r.tagMaxLen)
 			buf.WriteString(newline)
 			buf.WriteString("\n")
 			continue
@@ -235,13 +259,21 @@ func (r *tag) tag() {
 	r.gen.Buffer.Reset()
 	data := buf.Bytes()
 	r.gen.Buffer.Write(data)
+
+	if pbgoFileName != "" {
+		dir, _ := os.Getwd()
+		err := ioutil.WriteFile(dir+"/test/example/example.pb_resetTag.go", r.gen.Buffer.Bytes(), 0644)
+		if err != nil {
+			log.Println(err.Error())
+		}
+	}
 }
 
-func (r *tag) needtag(line string) bool {
+func (r *Tag) needtag(line string) bool {
 	for k := range r.tags {
 		ks := strings.Split(k, ".")
 		sub := "type " + ks[0] + " struct"
-		if strings.HasPrefix(line, sub) {
+		if strings.HasPrefix(strings.ToLower(line), sub) {
 			return true
 		}
 	}
@@ -249,6 +281,9 @@ func (r *tag) needtag(line string) bool {
 	return false
 }
 func resetTag(line string, field string, tag string, maxlenField, maxlenTag int) string {
+	if tag == "" {
+		return line
+	}
 	//reset default json
 	res := strings.Trim(strings.TrimRight(strings.TrimRight(line, "\n"), " "), "`")
 	if strings.Contains(line, "json:") && strings.Contains(tag, "json:") {
@@ -268,15 +303,13 @@ func resetTag(line string, field string, tag string, maxlenField, maxlenTag int)
 
 	fs = append(fs, strings.Fields(tag)...)
 
+	res = strings.TrimRight(res, " ")
+
 	for i := 2; i < len(fs); i++ {
 		if i == 2 {
-			format := "%-" + strconv.Itoa(len(`protobuf:"bytes,xxx,opt,name=`)+maxlenField) + "s  "
-			res += fmt.Sprintf(format, fs[i])
-		} else if i != len(fs)-1 {
-			format := "%-" + strconv.Itoa(len(fs[i])-len(strings.Trim(strings.Split(fs[i], ":")[1], "\""))+maxlenTag) + "s  "
-			res += fmt.Sprintf(format, fs[i])
-		} else {
 			res += fs[i]
+		} else {
+			res += " " + fs[i]
 		}
 	}
 

@@ -1,0 +1,7 @@
+#!/bin/bash -e
+
+# gen pb.go without tag
+protoc --go_out=plugins=grpc:. ./test/example/*.proto
+
+# gen pb.go with tag
+# protoc --go_out=plugins=grpc+tag:. ./test/example/*.proto
