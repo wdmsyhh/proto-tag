@@ -20,7 +20,7 @@ cd $GOPATH/src/github.com/golang/protobuf/protoc-gen-go
 把 proto_tag 中的 tag.go 文件拷贝到新建的 tag 目录中
 
 然后在 protobuf/protoc-gen-go/link_grpc.go 文件中加一行 import _ "github.com/golang/protobuf/protoc-gen-go/tag"
-最后执行 go install github.com/golang/protobuf/protoc-gen-go 并使用 $GOPATH/bin/protoc-gen-go
+最后在 protobuf/protoc-gen-go 目录中执行 go install 并使用 $GOPATH/bin/protoc-gen-go
 ```
 
 ## usage
