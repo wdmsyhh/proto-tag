@@ -90,5 +90,3 @@ type Staff_Class struct {
 	Type string `protobuf:"bytes,2,opt,name=Type"      json:"type,omitempty"   xml:"type,omitempty"`
 }
 ```
-
-## 添加自定义 tag 可以使用第三方库来校验参数参考 test/example/tagUsage/main.go
